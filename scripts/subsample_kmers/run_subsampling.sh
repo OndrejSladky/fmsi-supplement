@@ -39,16 +39,6 @@ do
         ln -s ../../data/${GENOME}.fa.xz "${OUTPUT_DIR}${GENOME}_subsampled_k${kk}_r1.0.fa.xz" 2>/dev/null && echo "created ${OUTPUT_DIR}${GENOME}_subsampled_k${kk}_r1.0.fa.xz"
     fi
 done
-# add 31
-# for rr in "0.001" "0.01" "0.1" "0.2" "0.3" "0.4" "0.5" "0.6" "0.7" "0.8" "0.9" # PV: omitting very small rates: "0.000000001" "0.0001"  "0.05" 
-# do
-# 	s+="31\n$rr\n"
-# done
-# if [ ! -e "${OUTPUT_DIR}${GENOME}_subsampled_k31_r1.0.fa.xz" ]; then
-# 	ln -s ../../data/${GENOME}.fa.xz "${OUTPUT_DIR}${GENOME}_subsampled_k31_r1.0.fa.xz" 2>/dev/null && echo "created ${OUTPUT_DIR}${GENOME}_subsampled_k31_r1.0.fa.xz"
-# fi
-
-#echo "s=$s"
 
 printf $s \
 	| parallel --max-args=2 -j1 subsample $GENOME
