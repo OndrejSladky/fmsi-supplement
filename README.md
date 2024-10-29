@@ -1,4 +1,7 @@
-# Supplementary repository for "FroM Superstring to Indexing: a space-efficient index for unconstrained k-mer sets using the Masked Burrows-Wheeler Transform (MBWT)"
+# Supplementary repository for the FMSI paper
+
+Ondřej Sladký, Pavel Veselý, Karel Břinda:
+*FroM Superstring to Indexing: a space-efficient index for unconstrained k-mer sets using the Masked Burrows-Wheeler Transform (MBWT)"*, to appear on **bioRxiv**, 2024.
 
 
 <!-- vim-markdown-toc GFM -->
