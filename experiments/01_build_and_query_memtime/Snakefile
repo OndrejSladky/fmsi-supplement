@@ -18,7 +18,6 @@ STREAMING_NUM_SEQUENCES = 10000
 STREAMING_SEQUENCES_LENGTH = 300
 
 GET_QUERIES = "../../scripts/get_queries.py"
-#GET_QUERIES_STREAMING = "../../scripts/get_streaming_queries.py"
 WGSIM = "../../wgsim/wgsim"
 
 SUBSAMPLED_DIR = "../../data/subsampled"
