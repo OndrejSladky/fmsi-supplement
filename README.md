@@ -46,7 +46,7 @@ After cloning this repository, run the following to download all the dependencie
 git submodule update --init
 ```
 After that, CBL, SBWT, BWA, FMSI, KmerCamel, ProphAsm, and Wgsim (the submodules) need to be compiled, as described in each of these repositories.
-(We note that CBL need to be compiled for each value of *k* separately.)
+We note that CBL need to be compiled for each value of *k* separately, and we provide script [`compileCBL.sh`](compileCBL.sh) which compiles CBL for $k = 15, 23,$ and 31 with appropriate parameters.
 
 Running the experiments on membership queries besides standard Linux programs requires [Snakemake](https://snakemake.readthedocs.io/en/stable/).
 
