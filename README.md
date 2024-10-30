@@ -48,7 +48,7 @@ git submodule update --init
 After that, CBL, SBWT, BWA, FMSI, KmerCamel, ProphAsm, and Wgsim (the submodules) need to be compiled, as described in each of these repositories.
 We note that CBL need to be compiled for each value of *k* separately, and we provide script [`compileCBL.sh`](compileCBL.sh) which compiles CBL for $k = 15, 23,$ and 31 with appropriate parameters.
 
-Running the experiments on membership queries besides standard Linux programs requires [Snakemake](https://snakemake.readthedocs.io/en/stable/).
+Running the experiments on membership queries besides standard Linux programs requires [Snakemake](https://snakemake.readthedocs.io/en/stable/) and Rscript to aggregate the results into a tsv table.
 
 First, the datasets evaluated need to be subsampled using script `run_subsampling.sh`, which gets dataset name (without extension .fa.xz) as a parameter. One can specify desired subsampling rates and values of *k* inside `run_subsampling.sh`. This creates compressed FASTA files with subsampled datasets in data/subsampled/. For example, to subsampled the *S. pneumoniae* pan-genome, run the following
 ```bash
