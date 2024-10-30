@@ -10,13 +10,7 @@ h=$(shell hostname)
 $(info Hostname $h)
 
 all: #build_programs
-	snakemake -p -j 3 --rerun-incomplete --scheduler greedy --keep-going --rerun-triggers mtime --resources sbwtlimit=1
-
-build_programs: #TODO: update
-	$(MAKE) -C ../../kmercamel
-	$(MAKE) -C ../../prophasm
-	$(MAKE) -C ../../prophex
-	$(MAKE) -C ../../ms-index
+	snakemake -p -j 4 --rerun-incomplete --scheduler greedy --keep-going --rerun-triggers mtime --resources sbwtlimit=1
 
 # Run test
 test: cleantest #build_programs
