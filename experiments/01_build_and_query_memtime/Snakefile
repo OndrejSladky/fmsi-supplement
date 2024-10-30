@@ -31,7 +31,6 @@ SBWT = "../../SBWT/build/bin/sbwt"
 
 # DEFAULT PARAMS OF PROGRAMS
 SBWT_VARIANT = "plain-matrix"  # choosing the default variant now as it achieves the best query times in SBWT paper; for index size: "rrr-subsetwt" has nearly as small index as "mef-concat", but the latter produces a warning on kamenac
-# SBWT variant: not with Elias-Fano "WARNING: This program was compiled for a CPU without support for the BMI2 instruction set. The performance of the Elias-Fano variants will be very bad."
 SBWT_VARIANT_MEM = "rrr-split"  # one of the most memory efficient variant that has the best query time among the most memory-efficient variants (according to the SBWT paper)
 SBWT_TMP_DIR = "sbwt-tmp/" #/tmp/ -- PV: note: do not use /tmp/ on servers as they have limited root dist
 SBWT_RAM = "60" # SBWT -m param.: "RAM budget in gigabytes (not strictly enforced). Must be at least 2. (default: 2)"
@@ -41,13 +40,12 @@ BWA_PARAM_W = 999999
 SSHASH = "../../sshash/build/sshash"
 NUM_THREADS = 1 # NOTE: using only 1 thread for SBWT, even though they can use more threads (for query or index building, resp., but not both)
 
-# 
-D_VALS = [1]
-K_VALS = [15, 23, 31] # limiting values of k for now #TODO add 15 and 31
-R_VALS = ["0.1", "1.0"] # currently for E.coli
+# PARAMETERS SETUP
+D_VALS = [1] # parameters d_max for local greedy of KmerCamel
+K_VALS = [15, 23, 31] # values of k
+R_VALS = ["0.1", "1.0"] # subsampling rates
 CAMEL_ALGS = ["global", "local"]
 GENOMES_SUBSAMPLED = ["spneumo_pangenome_k32", "escherichia_coli.k63", "sars-cov-2_pangenome_k32"] # file {g}.fa.xz, which contains the non-subsampled dataset, assumed to be in the same dir as this Snakefile 
-# OMITTED: "spneumoniae", 
 
 if config["testing"]:
     D_VALS = [1]
@@ -57,7 +55,6 @@ if config["testing"]:
 else:
     testing_suffix = ""
 
-#TODO try to simplify
 ### All combination of params to be tested
 prefs_MS_comp_rates = set()
 prefs_MS_comp = set()
@@ -338,7 +335,6 @@ rule aggregate_cbl_query_memtime_stats:
             > {output.tsv}
         """
 
-# TODO: we only take the stats for creating index w/o streaming support
 rule aggregate_sbwt_memtime_stats:
     output:
         tsv=f"99_results/sbwt_memtime.{HOSTNAME}{testing_suffix}.tsv",
@@ -419,7 +415,7 @@ rule compute_queries_positive_wRCs:
         
 rule compute_queries_negative:
     input:
-        fa=f"GRCh38.p14.chromosome1.prefix2M.fasta",
+        fa=f"GRCh38.p14.chromosome1.prefix2M.fasta.xz",
         faExcl=f"{SUBSAMPLED_DIR}/" + "{g}_subsampled_k{k}_r1.0.fa.xz",
     output:
         q="42_query_fastas/{g}.k_{k}-queries-neg.fa",
@@ -428,7 +424,7 @@ rule compute_queries_negative:
         num_queries=NUM_QUERIES,
     shell:
         """
-        {params.get_queries} -k {wildcards.k} -cap {params.num_queries} -print_header True -e <(xzcat {input.faExcl}) {input.fa} >{output.q}
+        {params.get_queries} -k {wildcards.k} -cap {params.num_queries} -print_header True -e <(xzcat {input.faExcl}) <(xzcat {input.fa}) >{output.q}
         """
 rule compute_queries_negative_wRCs:
     input:
@@ -441,27 +437,12 @@ rule compute_queries_negative_wRCs:
         """
         python3 {params.script} {input.q} {output.q}
         """
-    # input:
-    #     fa=f"GRCh38.p14.chromosome1.prefix2M.fasta",
-    #     faExcl=f"{SUBSAMPLED_DIR}/" + "{g}_subsampled_k{k}_r1.0.fa.xz",
-    # output:
-    #     q="42_query_fastas/{g}.k_{k}-queries-neg-wRCs.fa",
-    # params:
-    #     get_queries=GET_QUERIES,
-    #     num_queries=NUM_QUERIES,
-    # shell:
-    #     """
-    #     {params.get_queries} -k {wildcards.k} -cap {params.num_queries} -print_header True -print_RC True -e <(xzcat {input.faExcl}) {input.fa} >{output.q}
-    #     """
         
 rule compute_queries_streaming:
-    input:
-        fa=f"{SUBSAMPLED_DIR}/" + "{g}_subsampled_k31_r1.0.fa.xz",
     output:
         q="42_query_fastas/{g}-queries-str.fa",
     params:
         wgsim=WGSIM,
-        #get_queries=GET_QUERIES_STREAMING,
         num_seq=STREAMING_NUM_SEQUENCES,
         seq_length=STREAMING_SEQUENCES_LENGTH,
         refGenomeFa="../../data/{g}-refGenome.fa",
@@ -472,7 +453,6 @@ rule compute_queries_streaming:
         seqtk seq -a {params.tmpOutput} >{output.q}
         rm {params.tmpOutput}
         """
-        # {params.get_queries} -k {wildcards.k} -sequences {params.num_seq} -kmers_per_line {params.seq_length} -print_header True <(xzcat {input.fa}) >{output.q}
 
 rule compute_queries_streaming_wRCs:
     input:
@@ -490,12 +470,12 @@ rule compute_queries_streaming_wRCs:
 # COUNT KMERS
 #####################################################################################################
 
-# HACK TO AVOID COUNTING K-MERS MORE TIMES: we assume that global is always run for every genome, rate, and k
+# not used now -- precomputed to set up params for SSHash 
 rule count_kmers:
     output:
         txt="80_size_stats/{g}.r_{r}.k_{k}.kmerCount",
     input:
-        txt="30_FMSIv02_index/{g}.r_{r}.S_global.k_{k}.d_na.fa",
+        txt="01_MS_index/{g}.r_{r}.S_global.k_{k}.d_na.fa",
     priority: 150
     shell:
         """
@@ -818,7 +798,6 @@ rule make_BWA_stats:
 # RUN SSHash on ProphAsm output
 #####################################################################################################
 
-# TODO: kmer_cnt_file must be created before running Snakemake...
 def GetMinimizerLen4SSHash(wildcards): # using a formula from Giulio
     kmer_cnt_file = f"80_size_stats/{wildcards.g}.r_{wildcards.r}.k_{wildcards.k}.kmerCount"
     with open(kmer_cnt_file) as f:
@@ -944,7 +923,6 @@ rule make_sshash_stats:
 # - d=0: SBWT_VARIANT with param. --add-reverse-complements, which handles reverse complements (RCs)
 # - d=1: SBWT_VARIANT_MEM param.  WITHOUT reverse complements; this is supposed to be more memory efficient than the default variant but slower
 # Both need the same input file (uncompressed), so both are handled by this rule (can also separate jobs for both runs)
-# TODO: rewrite in a more generic way (based on param. d, determine the params for SBWT)
 rule build_sbwt:
     input:
         fa=f"{SUBSAMPLED_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa.xz",
