@@ -18,7 +18,7 @@ function subsample {
         return
     fi
 	echo "running subsampling for g=$g, k=$k, r=$r"
-	./subsample_kmers.py -k $k -r $r ../../data/${g}.fa \
+	./subsample_kmers.py -k $k -r $r ../../data/${g}.fa.xz \
 		| pv -l \
 		| xz -9 -T1 \
 		> ${OUTPUT_DIR}${g}_subsampled_k${k}_r${r}.fa.xz
@@ -28,10 +28,10 @@ function subsample {
 export -f subsample
 
 s=""
-for kk in 15 23 31 #$(seq 9 2 23) #{9..23..2}
+for kk in 15 23 31
 do
     ## the first rate is effectively just one, randomly chosen k-mer
-	for rr in "0.01" "0.1" #"0.001" "0.01" "0.1" "0.2" "0.3" "0.4" "0.5" "0.6" "0.7" "0.8" "0.9" # PV: omitting very small rates: "0.000000001" "0.0001"  "0.05" 
+    for rr in "0.1"
     do
 		s+="$kk\n$rr\n"
 	done
