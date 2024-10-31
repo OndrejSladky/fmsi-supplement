@@ -29,7 +29,10 @@ help: ## Print help message
 clean: ## Clean
 	rm -frv *_index/*
 	rm -frv *_memtime/$h*
-	rm -fr 99_results/*$h*
+	rm -frv *_memtime/$h*
+	rm -frv 42_query_fastas/*
+	rm -frv 80_size_stats/$h*
+	rm -frv 99_results/*$h*
 
 cleantest:
 	rm -fr 99_results/*$h__test.tsv
