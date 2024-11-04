@@ -51,6 +51,8 @@ Ondřej Sladký, Pavel Veselý, Karel Břinda:
   - The resulting file:
     [data/sars-cov-2_pangenome_k32.fa.xz](data/sars-cov-2_pangenome_k32.fa.xz)
 
+For each of the pan-genomes, we add one reference genome to the [data/](data/) directory, downloaded from [NCBI](https://www.ncbi.nlm.nih.gov/). These reference genomes are used to generate positive streaming queries using [Wgsim](https://github.com/lh3/wgsim).
+
 For generating negative membership queries to these datasets, we used a 2MB prefix of the FASTA file for chromosome 1 of *H. sapiens* genome (`GRCh38.p14 Primary Assembly`, `NC_000001.11`), downloaded from [NCBI](https://www.ncbi.nlm.nih.gov); see  [data/GRCh38.p14.chromosome1.prefix2M.fasta.xz](data/GRCh38.p14.chromosome1.prefix2M.fasta.xz)
 
 
@@ -64,7 +66,19 @@ git submodule update --init
 After that, CBL, SBWT, BWA, FMSI, KmerCamel, ProphAsm, and Wgsim (the submodules) need to be compiled, as described in each of these repositories.
 We note that CBL need to be compiled for each value of *k* separately, and we provide script [`compileCBL.sh`](compileCBL.sh) which compiles CBL for $k = 15, 23,$ and 31 with appropriate parameters.
 
-Running the experiments on membership queries besides standard Linux programs requires [Snakemake](https://snakemake.readthedocs.io/en/stable/) and Rscript to aggregate the results into a tsv table.
+To run the experiments on membership queries for one conmbination of dataset, value of *k*, and subsampling rate, execute
+```bash
+cd experiments/
+./run_experiment_memtime.sh <prefix> <k> <rate>
+```
+where `<prefix>` is the dataset, e.g., `<prefix> = spneumo_pangenome_k32` or `sars-cov-2_pangenome_k32` or `escherichia_coli.k63` (the script assumes that files `../data/<prefix>.fa.xz` and `../data/<prefix>-refGenome.fa` exist),
+`<k>` is the *k*-mer size, and `<rate>` is the rate to subsample *k*-mers (e.g., rate could be 0.1 for sampling 10% distinct *k*-mers; use 1.0 for no subsampling). For example, `./run_experiment_memtime.sh spneumo_pangenome_k32 31 0.1`.
+
+The script creates log files in the `experiments/` directory, each containing the results of /usr/bin/time in a tsv format (with a header line specifying the command that was run).
+
+**Warning:** running SBWT requires substantial disk space for temporary files, especially on the *E. coli* dataset, where it used 84 GB of disk space in our benchmarks.
+
+We also provide a way to run the experiments reported in the paper at once (i.e., run it with multiple datasets, values of *k*, and subsampling rates), using [Snakemake](https://snakemake.readthedocs.io/en/stable/). We also require Rscript to aggregate the results into a tsv table.
 
 First, the datasets evaluated need to be subsampled using script `run_subsampling.sh`, which gets dataset name (without extension .fa.xz) as a parameter. One can specify desired subsampling rates and values of *k* inside `run_subsampling.sh`. This creates compressed FASTA files with subsampled datasets in data/subsampled/. For example, to subsampled the *S. pneumoniae* pan-genome, run the following
 ```bash
