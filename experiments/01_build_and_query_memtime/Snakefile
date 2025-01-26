@@ -14,15 +14,15 @@ DATASETS_AND_K_VALS = [("spneumo_pangenome_RASE_db.unitigs_k128", list(range(15,
                        ("minikraken4GB_k31", [31]),
                        ("minikraken8GB_k31", [31]),
                        ("human_rnaseq_srx348811.unitigs_minfreq2_k32", [15, 23, 31]), # only up to 32
-                       ("human_genome_assembly_chm13.v2.0", list(range(11, 47, 2))), #TODO: subsampled only for k=23
-                       ("human_genome_illumina.unitigs_minfreq2_k32", [15, 23, 31]), # only up to 32 #TODO: not subsampled yet
+                       ("human_genome_assembly_chm13.v2.0", list(range(11, 47, 2))), #NOTE: subsampled only for k=23
+                       ("human_genome_illumina.unitigs_minfreq2_k32", [15, 23, 31]), # only up to 32
                        ("human_microbiome_illumina_srs063932.unitigs_minfreq2_k32", list(range(15, 32, 2))), # only up to 32
                        ]
 
 # for subsampling 
 R_VALS = ["0.1", "1.0"]
 SUBSAMPLED_KS = [15, 23, 31]
-DATASETS_NOT_SUBSAMPLED = ["minikraken4GB_k31", "minikraken8GB_k31", "human_microbiome_illumina_srs063932.unitigs_minfreq2_k32"]
+DATASETS_NOT_SUBSAMPLED = ["minikraken4GB_k31", "minikraken8GB_k31", "human_genome_illumina.unitigs_minfreq2_k32"]
 
 HOSTNAME = socket.gethostname()
 if HOSTNAME == "":
@@ -34,11 +34,11 @@ STREAMING_SEQUENCES_LENGTH = 300
 NEGATIVE_QUERIES_REF_FASTA="../../data/Triticum_aestivum.IWGSC.dna.chromosome.1A.fa"
 NEGATIVE_QUERIES_MUT_RATE=0.1
 WGSIM_STD_DEV = 31 # default is 50; wgsim ignores sequences shorter than 3*std_dev + dist
-WGSIM = "./wgsim"
+#WGSIM = "./wgsim"
 GET_QUERIES = "../../scripts/get_queries.py"
 
-RSPSS_DIR = "./05_eulertigs/"
-SBWT_DIR = "./10_sbwt_index/"
+RSPSS_DIR = "05_eulertigs/"
+SBWT_DIR = "10_sbwt_index/"
 
 DATA_DIR = "../../data/"
 
@@ -60,7 +60,7 @@ SBWT_TMP_DIR = "./_SBWT-tmp/" #"sbwt-tmp/" #/tmp/ -- PV: note: do not use /tmp/ 
 SBWT_RAM = "120" # SBWT -m param.: "RAM budget in gigabytes (not strictly enforced). Must be at least 2. (default: 2)"
 CBL_PREF = "./CBL/target.k_" # NOTE: CBL is compiled for every k separately
 CBL_SUFF = "/release/examples/cbl"
-CBL_MAX_K = 59 # see https://github.com/imartayan/CBL ; NOTE: 39 was maximum possible for HG
+CBL_MAX_K = 59 # see https://github.com/imartayan/CBL ; NOTE: 39 was maximum possible for HG in 250 GB
 NUM_THREADS = 1 # NOTE: using only 1 thread for SBWT, even though they can use more threads (for query or index building, resp., but not both)
 # 
 D_VALS = [1]
@@ -68,9 +68,8 @@ CAMEL_ALGS = ["global"] # also possible: "local"
 RSPSS_ALGS = ["eulertigs"]
 
 if config["testing"]:
-    D_VALS = [1]
-    K_VALS = [23]
-    R_VALS = ["0.1"]
+    DATASETS_AND_K_VALS = [("spneumo_pangenome_RASE_db.unitigs_k128", [31])]
+    R_VALS = ["1.0"]
     testing_suffix = "__test"
 else:
     testing_suffix = ""
@@ -141,7 +140,7 @@ rule aggregate_data:
         "99_results/cbl_query_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
         "99_results/size_stats.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
     output:
-        "99_results/exp_01_build_index_results.{g}" + f".{HOSTNAME}.tsv",
+        "99_results/exp_01_build_index_results.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
     params:
         suffix=testing_suffix
     shell:
@@ -357,12 +356,15 @@ rule aggregate_sbwt_query_memtime_stats:
 
 rule link_for_non_subsampled:
     input:
-        fa=f"{DATA_DIR}/" + "{g}.fa",
+        fa=f"{DATA_DIR}" + "{g}.fa",
     output:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r1.0.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r1.0.fa",
+    params:
+        datadir=DATA_DIR
     shell:
         """
-        ln -s  {input.fa} {output.fa}
+        cd {params.datadir}
+        ln -s  $(basename {input.fa}) $(basename {output.fa})
         """
 
 #####################################################################################################
@@ -371,13 +373,12 @@ rule link_for_non_subsampled:
 
 rule compute_queries_positive_wgsim_genomes:
     input:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r1.0.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r1.0.fa",
     output:
         q="42_query_fastas/{g}.r_1.0.k_{k}-queries.fa",
     wildcard_constraints:
         g="placeholder|" + '|'.join([d for d, _ in DATASETS_AND_K_VALS if not d.startswith("minikraken") and not ".unitigs_" in d]),
     params:
-        wgsim=WGSIM,
         mut_rate=0,
         seq_len="{k}",
         num_seqs=NUM_QUERIED_KMERS,
@@ -396,7 +397,6 @@ rule compute_queries_positive_wgsim:
     wildcard_constraints:
         g="placeholder|" + '|'.join([d for d, _ in DATASETS_AND_K_VALS if not d.startswith("minikraken") and ".unitigs_k128" in d]),
     params:
-        wgsim=WGSIM,
         mut_rate=0,
         seq_len="{k}",
         num_seqs=NUM_QUERIED_KMERS,
@@ -409,7 +409,7 @@ rule compute_queries_positive_wgsim:
 
 rule compute_queries_positive_python_script:
     input:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r{r}.fa",
     output:
         q="42_query_fastas/{g}.r_{r}.k_{k}-queries.fa",
     wildcard_constraints:
@@ -425,7 +425,7 @@ rule compute_queries_positive_python_script:
 # for subsampled, we generate queries from a prefix of file
 rule compute_queries_positive_subsampled:
     input:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r{r}.fa",
     output:
         q="42_query_fastas/{g}.r_{r}.k_{k}-queries.fa",
     wildcard_constraints:
@@ -458,7 +458,6 @@ rule compute_queries_negative:
     wildcard_constraints:
         k="\\d+" 
     params:
-        wgsim=WGSIM,
         refGenomeFa=NEGATIVE_QUERIES_REF_FASTA,
         mut_rate=NEGATIVE_QUERIES_MUT_RATE,
         seq_len="{k}",
@@ -489,7 +488,6 @@ rule compute_queries_streaming:
     output:
         q="42_query_fastas/{g}.k_{k}-queries-str.fa",
     params:
-        wgsim=WGSIM,
         mut_rate=0,
         seq_len=STREAMING_SEQUENCES_LENGTH,
         num_seqs=lambda wildcards: GetNumSeqs4StreamingQueries(STREAMING_SEQUENCES_LENGTH, NUM_QUERIED_KMERS, wildcards),
@@ -537,7 +535,7 @@ rule count_kmers:
 # includes mask optimization
 rule run_kmer_camel:
     input:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r{r}.fa",
         hw=f"00_hw_info/{HOSTNAME}.txt",
     output:
         fa="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa",
@@ -694,7 +692,7 @@ rule make_fmsi_stats:
 
 rule run_prophasm:
     input:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r{r}.fa",
     output:
         fa=RSPSS_DIR+"{g}.r_{r}.S_prophasm.k_{k}.d_na.fa",
         log0=f"06_rspss_comp_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_prophasm.k_{k}.d_na.t_superstring.log",
@@ -708,7 +706,7 @@ rule run_prophasm:
 
 rule compute_ggcat_eulertigs:
     input:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r{r}.fa",
     output:
         fa=RSPSS_DIR+"{g}.r_{r}.S_eulertigs.k_{k}.d_na.fa",
         log0=f"06_rspss_comp_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_eulertigs.k_{k}.d_na.t_superstring.log",
@@ -861,7 +859,7 @@ def SBWT_prog_path(wildcards):
 
 rule build_sbwt:
     input:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r{r}.fa",
     output:
         sbwt=SBWT_DIR + "{g}.r_{r}.S_none.k_{k}.d_0.fa.sbwt",
         sbwtStreaming=SBWT_DIR + "{g}.r_{r}.S_none.k_{k}.d_0.fa-Streaming.sbwt",
@@ -1025,7 +1023,7 @@ rule make_sbwt_stats:
 
 rule run_cbl:
     input:
-        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+        fa=f"{DATA_DIR}" + "{g}_subsampled_k{k}_r{r}.fa",
     output:
         ind="20_cbl_index/{g}.r_{r}.S_none.k_{k}.d_na.fa.cblIndex",
         log0=f"21_cbl_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_none.k_{k}.d_na.t_index.log",

@@ -9,15 +9,15 @@ SHELL=/usr/bin/env bash -eo pipefail
 h=$(shell hostname)
 $(info Hostname $h)
 
-all: #build_programs
-	snakemake -p -j 8 --rerun-incomplete --scheduler greedy --keep-going --rerun-triggers mtime --resources sbwtlimit=3
+all:
+	snakemake -p -j 2 --rerun-incomplete --scheduler greedy --keep-going --rerun-triggers mtime --resources sbwtlimit=3
 
-dry: #build_programs
+dry:
 	snakemake -p -j 2 --rerun-incomplete --scheduler greedy --keep-going --rerun-triggers mtime --resources sbwtlimit=1 --dry-run
 
 # Run test
-test: cleantest #build_programs
-	snakemake -p -j 20 --rerun-incomplete --config testing=True
+test: cleantest
+	snakemake -p -j 8 --rerun-incomplete --config testing=True
 
 # Run test with 1 thread
 test1: cleantest #build_programs
