@@ -10,7 +10,10 @@ h=$(shell hostname)
 $(info Hostname $h)
 
 all: #build_programs
-	snakemake -p -j 4 --rerun-incomplete --scheduler greedy --keep-going --rerun-triggers mtime --resources sbwtlimit=1
+	snakemake -p -j 8 --rerun-incomplete --scheduler greedy --keep-going --rerun-triggers mtime --resources sbwtlimit=3
+
+dry: #build_programs
+	snakemake -p -j 2 --rerun-incomplete --scheduler greedy --keep-going --rerun-triggers mtime --resources sbwtlimit=1 --dry-run
 
 # Run test
 test: cleantest #build_programs
@@ -29,13 +32,15 @@ help: ## Print help message
 clean: ## Clean
 	rm -frv *_index/*
 	rm -frv *_memtime/$h*
-	rm -frv *_memtime/$h*
 	rm -frv 42_query_fastas/*
 	rm -frv 80_size_stats/$h*
 	rm -frv 99_results/*$h*
 
 cleantest:
 	rm -fr 99_results/*$h__test.tsv
+
+cleanres:
+	rm -fr 99_results/*$h.tsv
 
 cleanall: clean ## Clean all
 	rm -frv 00_hw_info/$h*
