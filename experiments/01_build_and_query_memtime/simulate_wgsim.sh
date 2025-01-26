@@ -9,7 +9,7 @@
 # params: refGenome, mutation rate, seq. length, num. sequences, std. dev.
 # output: stdout
 
-WGSIM="../../wgsim/wgsim"
+WGSIM="./wgsim"
 REF_GENOME=$1
 MUT_RATE=$2
 SEQ_LEN=$3
