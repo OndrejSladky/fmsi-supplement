@@ -67,9 +67,37 @@ def readfq(fp):  # this is a generator function
 _nucl_to_num = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
 
 
-def encode_kmer(kmer):  # canonical representation
+def canonical_kmer(kmer):  # canonical representation
     return min(kmer, rc(kmer))
 
+# Mapping for encoding and decoding
+encode_map = {'A': 0b00, 'C': 0b01, 'G': 0b10, 'T': 0b11}
+decode_map = {0b00: 'A', 0b01: 'C', 0b10: 'G', 0b11: 'T'}
+
+def encode_kmer(kmer: str) -> int:
+    """
+    Encode a k-mer (consisting of A/C/G/T) into a 64-bit integer
+    using 2 bits per nucleotide: A=00, C=01, G=10, T=11.
+    """
+    num = 0
+    for base in kmer:
+        num <<= 2               # Shift left by 2 bits
+        num |= encode_map[base] # Add the 2-bit encoding for the current base
+    return num
+
+def decode_kmer(encoded_kmer: int, k: int) -> str:
+    """
+    Decode a 64-bit integer back into a k-mer string (A/C/G/T).
+    We rebuild from the least significant bits, so we'll reverse at the end.
+    """
+    bases = []
+    for _ in range(k):
+        # Get the last 2 bits
+        two_bits = encoded_kmer & 0b11
+        bases.append(decode_map[two_bits])
+        encoded_kmer >>= 2
+    # Reverse because we read from least-significant bits first
+    return ''.join(reversed(bases))
 
 def subsample_kmers(fn, k, sampling_rate):
     K = set()  # set of canonical k-mers
@@ -78,7 +106,7 @@ def subsample_kmers(fn, k, sampling_rate):
         for name, seq, _ in readfq(fo):
             for i in range(len(seq) - k + 1):
                 Q = seq[i:i + k].upper()
-                Qenc = encode_kmer(Q)
+                Qenc = encode_kmer(canonical_kmer(Q))
                 K.add(Qenc)
 
     p = max(int(sampling_rate * len(K)), 1)
@@ -88,7 +116,8 @@ def subsample_kmers(fn, k, sampling_rate):
     )
     l = random.sample(sorted(list(K)), p)
     #l.sort()
-    for i, Q in enumerate(l, 1):
+    for i, Qenc in enumerate(l, 1):
+        Q = decode_kmer(Qenc, k)
         print(f">{i}")
         print(f"{Q}")
 
@@ -96,7 +125,7 @@ def subsample_kmers(fn, k, sampling_rate):
 def main():
 
     parser = argparse.ArgumentParser(
-        description="Count k-mers in a masked superstring")
+        description="Subsample distinct k-mers of a FASTA file")
 
     parser.add_argument(
         '-k',
