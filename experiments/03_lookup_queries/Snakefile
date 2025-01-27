@@ -1,0 +1,656 @@
+import socket
+import random
+import math
+
+shell.prefix("set -euo pipefail")
+
+########################  FOR TESTING LOOKUP QUERIES: only FMSI (with min-1's mask) and SSHash ############
+
+########## SETUP ###############
+DATASETS_AND_K_VALS = [#("spneumo_pangenome_RASE_db.unitigs_k128", list(range(15, 47, 2))),
+                       ("sars-cov-2_pangenome_gisaid.unitigs_k128", [15, 23]), # list(range(15, 47, 2))),
+                    #    ("minikraken4GB_k31", [31]),
+                    #    ("minikraken8GB_k31", [31]),
+                    #    ("ecoli_pangenome_661k_HQ.unitigs_k128", list(range(15, 47, 2))),
+                    #    ("ecoli_pangenome_661k_all.unitigs_k128", [15, 23, 31]),
+                    #    ("human_rnaseq_srx348811.unitigs_minfreq2_k32", [15, 23, 31]), # only up to 32
+                    #    ("human_genome_assembly_chm13.v2.0", list(range(11, 47, 2))), #NOTE: subsampled only for k=23
+                    #    ("human_genome_illumina.unitigs_minfreq2_k32", [15, 23, 31]), # only up to 32
+                    #    ("human_microbiome_illumina_srs063932.unitigs_minfreq2_k32", list(range(15, 32, 2))), # only up to 32
+                       ]
+
+# for subsampling 
+R_VALS = ["0.1", "1.0"]
+SUBSAMPLED_KS = [15, 23, 31]
+DATASETS_NOT_SUBSAMPLED = ["minikraken4GB_k31", "minikraken8GB_k31", "human_genome_illumina.unitigs_minfreq2_k32"]
+
+
+configfile: "config.yaml"
+
+
+HOSTNAME = socket.gethostname()
+if HOSTNAME == "":
+    HOSTNAME = "NA"
+print(HOSTNAME)
+
+NUM_QUERIED_KMERS = 1000000
+STREAMING_SEQUENCES_LENGTH = 300
+NEGATIVE_QUERIES_REF_FASTA="../../data/Triticum_aestivum.IWGSC.dna.chromosome.1A.fa"
+NEGATIVE_QUERIES_MUT_RATE=0.1
+WGSIM_STD_DEV = 31 # default is 50; wgsim ignores sequences shorter than 3*std_dev + dist
+
+RSPSS_DIR = "05_eulertigs/"
+
+DATA_DIR = "../../data"
+
+# PATH TO PROGRAMS
+CAMEL = "./kmercamel"
+FMSI = "./fmsi"
+PROPHASM = "../../prophasm/prophasm" # create download&compile script if used again
+GGCAT = "./ggcat"
+SSHASH = "./sshash"
+SSHASH_LARGE_K = "./sshash_large_k"
+
+NUM_THREADS = 1 # NOTE: using only 1 thread for SBWT, even though they can use more threads (for query or index building, resp., but not both)
+# 
+D_VALS = [1]
+CAMEL_ALGS = ["global"]
+RSPSS_ALGS = ["eulertigs"] 
+
+if config["testing"]:
+    DATASETS_AND_K_VALS = [("spneumo_pangenome_RASE_db.unitigs_k128", [31])]
+    R_VALS = ["1.0"]
+    testing_suffix = "__test"
+else:
+    testing_suffix = ""
+
+### All combination of params to be tested
+prefs_MS_comp_rates = set()
+prefs_SPSS_comp_rates = set()
+for (g, K_vals) in DATASETS_AND_K_VALS:
+    for k in K_vals:
+        for S in CAMEL_ALGS:
+            for d in filter(lambda d: d < k, D_VALS): # filter out d larger than k
+                # here we can remove unwanted combinations / replace non-sense combinations of params
+                if S in ["global"]:
+                    d = "na"
+                if S == "local" and (k > 31 or k in [29, 25, 21, 17] or g == "minikraken8GB_k31"): # TODO: tmp: exceptions for local 
+                    continue
+                for r in R_VALS:
+                    if r != "1.0" and k not in SUBSAMPLED_KS:
+                        continue
+                    if g not in DATASETS_NOT_SUBSAMPLED or r == "1.0":
+                        prefs_MS_comp_rates.add(f"{g}.r_{r}.S_{S}.k_{k}.d_{d}")
+        for r in R_VALS:
+            if r != "1.0" and k not in SUBSAMPLED_KS:
+                continue
+            if g not in DATASETS_NOT_SUBSAMPLED or r == "1.0":
+                for rspss in RSPSS_ALGS:
+                    if (g== "human_genome_assembly_chm13.v2.0" and rspss == "eulertigs" and k == 17) \
+                        or g.startswith("minikraken8"): # TODO: tmp for HG and minikraken8GB
+                        print(f"ADDING {g}.r_{r}.S_prophasm.k_{k}.d_na INSTEAD OF {g}.r_{r}.S_{rspss}.k_{k}.d_na")
+                        prefs_SPSS_comp_rates.add(f"{g}.r_{r}.S_prophasm.k_{k}.d_na")
+                    else:
+                        prefs_SPSS_comp_rates.add(f"{g}.r_{r}.S_{rspss}.k_{k}.d_na")
+prefs_MS_comp_rates = sorted(list(prefs_MS_comp_rates))
+prefs_SPSS_comp_rates = sorted(list(prefs_SPSS_comp_rates))
+
+
+
+print(f"Prefs for FMSI (based on MS): {prefs_MS_comp_rates}")
+print(f"Prefs for indexes on SPSS: {prefs_SPSS_comp_rates}")
+
+################################################################
+
+rule all:
+    input:
+        [f"99_results/exp_03_lookup_results.{g}.{HOSTNAME}{testing_suffix}.tsv" for g, _ in DATASETS_AND_K_VALS],
+        f"00_hw_info/{HOSTNAME}.txt",
+
+rule aggregate_data:
+    input:
+        "99_results/camel_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+        "99_results/fmsi_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+        "99_results/fmsi_query_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+        "99_results/rspss_comp_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+        "99_results/sshash_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+        "99_results/sshash_query_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+        "99_results/size_stats.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    output:
+        "99_results/exp_03_lookup_results.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    params:
+        suffix=testing_suffix
+    shell:
+        """
+        cd 99_results/
+        Rscript aggregate_data.R {wildcards.g} {params.suffix}
+        """
+
+
+#####################################################################################################
+# AGGREGATE STATISTICS
+#####################################################################################################
+
+
+rule aggregate_size_stats:
+    output:
+        tsv="99_results/size_stats.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    input:
+        lambda wildcards: [f"80_size_stats/{HOSTNAME}/fmsi.{p}.stats.tsv" for p in prefs_MS_comp_rates if p.startswith(f"{wildcards.g}.")],
+        lambda wildcards: [f"80_size_stats/{HOSTNAME}/sshash.{p}.stats.tsv" for p in prefs_SPSS_comp_rates if p.startswith(f"{wildcards.g}.")],
+    params:
+        tsv="99_results/size_stats.{g}" + f".{HOSTNAME}{testing_suffix}.tsv.tmp",
+    priority: 500
+    shell:
+        """
+        cat {input} \\
+            | awk '!seen[$0]++' \\
+            | tee {params.tsv} \\
+            | python3 sort_output_tsv.py \\
+            > {output.tsv}
+        """
+        
+rule aggregate_camel_memtime_stats:
+    output:
+        tsv="99_results/camel_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    input:
+        lambda wildcards: [f"02_camel_memtime/{HOSTNAME}/{p}.t_superstring.tsv" for p in prefs_MS_comp_rates if p.startswith(f"{wildcards.g}.")],
+    params:
+        tsv="99_results/camel_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv.tmp",
+    priority: 500
+    shell:
+        """
+        cat {input} \\
+            | awk '!seen[$0]++' \\
+            | tee {params.tsv} \\
+            | python3 sort_output_tsv.py \\
+            > {output.tsv}
+        """
+
+rule aggregate_fmsi_memtime_stats:
+    output:
+        tsv="99_results/fmsi_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    input:
+        lambda wildcards: [f"03_fmsi_memtime/{HOSTNAME}/{p}.t_index.tsv" for p in prefs_MS_comp_rates if p.startswith(f"{wildcards.g}.")],
+    params:
+        tsv="99_results/fmsi_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv.tmp",
+    priority: 500
+    shell:
+        """
+        cat {input} \\
+            | awk '!seen[$0]++' \\
+            | tee {params.tsv} \\
+            | python3 sort_output_tsv.py \\
+            > {output.tsv}
+        """
+
+rule aggregate_fmsi_query_memtime_stats:
+    output:
+        tsv="99_results/fmsi_query_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    input:
+        lambda wildcards: [f"04_fmsi_query_memtime/{HOSTNAME}/{p}.t_Pos.tsv" for p in prefs_MS_comp_rates if p.startswith(f"{wildcards.g}.")],
+        lambda wildcards: [f"04_fmsi_query_memtime/{HOSTNAME}/{p}.t_Neg.tsv" for p in prefs_MS_comp_rates if p.startswith(f"{wildcards.g}.")],
+        lambda wildcards: [f"04_fmsi_query_memtime/{HOSTNAME}/{p}.t_Str.tsv" for p in prefs_MS_comp_rates if p.startswith(f"{wildcards.g}.")],
+    params:
+        tsv="99_results/fmsi_query_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv.tmp",
+    priority: 500
+    shell:
+        """
+        cat {input} \\
+            | awk '!seen[$0]++' \\
+            | tee {params.tsv} \\
+            | python3 sort_output_tsv.py \\
+            > {output.tsv}
+        """
+
+rule aggregate_rspss_comp_memtime_stats:
+    output:
+        tsv="99_results/rspss_comp_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    input:
+        lambda wildcards: [f"06_rspss_comp_memtime/{HOSTNAME}/{p}.t_superstring.tsv" for p in prefs_SPSS_comp_rates if p.startswith(f"{wildcards.g}.")],
+    params:
+        tsv="99_results/rspss_comp_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv.tmp",
+    priority: 500
+    shell:
+        """
+        cat {input} \\
+            | awk '!seen[$0]++' \\
+            | tee {params.tsv} \\
+            | python3 sort_output_tsv.py \\
+            > {output.tsv}
+        """
+
+rule aggregate_sshash_memtime_stats:
+    output:
+        tsv="99_results/sshash_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    input:
+        lambda wildcards: [f"26_sshash_memtime/{HOSTNAME}/{p}.t_index.tsv" for p in prefs_SPSS_comp_rates if p.startswith(f"{wildcards.g}.")],
+    params:
+        tsv="99_results/sshash_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv.tmp",
+    priority: 500
+    shell:
+        """
+        cat {input} \\
+            | awk '!seen[$0]++' \\
+            | tee {params.tsv} \\
+            | python3 sort_output_tsv.py \\
+            > {output.tsv}
+        """
+
+rule aggregate_sshash_query_memtime_stats:
+    output:
+        tsv="99_results/sshash_query_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv",
+    input:
+        lambda wildcards: [f"27_sshash_query_memtime/{HOSTNAME}/{p}.t_Pos.tsv" for p in prefs_SPSS_comp_rates if p.startswith(f"{wildcards.g}.")],
+        lambda wildcards: [f"27_sshash_query_memtime/{HOSTNAME}/{p}.t_Neg.tsv" for p in prefs_SPSS_comp_rates if p.startswith(f"{wildcards.g}.")],
+        lambda wildcards: [f"27_sshash_query_memtime/{HOSTNAME}/{p}.t_Str.tsv" for p in prefs_SPSS_comp_rates if p.startswith(f"{wildcards.g}.")],
+    params:
+        tsv="99_results/sshash_query_memtime.{g}" + f".{HOSTNAME}{testing_suffix}.tsv.tmp",
+    priority: 500
+    shell:
+        """
+        cat {input} \\
+            | awk '!seen[$0]++' \\
+            | tee {params.tsv} \\
+            | python3 sort_output_tsv.py \\
+            > {output.tsv}
+        """
+
+#####################################################################################################
+# COUNT KMERS
+#####################################################################################################
+
+# TO AVOID COUNTING K-MERS MORE TIMES: we assume that eulertigs is always run for every genome, rate, and k
+rule count_kmers:
+    output:
+        txt="80_size_stats/{g}.r_{r}.k_{k}.kmerCount",
+    input:
+        fa=RSPSS_DIR+"{g}.r_{r}.S_eulertigs.k_{k}.d_na.fa",
+    shell:
+        """
+        ../../scripts/count_kmers_jellyfish.sh {input.fa} {wildcards.k} {output.txt}
+        """
+
+#####################################################################################################
+# RUN CAMEL + FMSI
+#####################################################################################################
+
+# no mask optimization -- we need min 1s, so default MS works
+rule run_kmer_camel:
+    input:
+        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+        hw=f"00_hw_info/{HOSTNAME}.txt",
+    output:
+        fa="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa",
+        log0=f"02_camel_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_{d}.t_superstring.log",
+    wildcard_constraints:
+        S='|'.join(CAMEL_ALGS),
+    params:
+        d_param=lambda wildcards: f"-d {wildcards.d}" if wildcards.d != "na" else "",
+        camel=CAMEL,
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.log0}" "{params.camel} -c -k {wildcards.k} {params.d_param} -p {input.fa} -a {wildcards.S} >{output.fa}"
+        """
+
+rule run_fmsi_for_lookup:
+    input:
+        fa="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa",
+    output:
+        ac="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.ac",
+        gt="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.gt",
+        ac_gt="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.ac_gt",
+        klcp="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.klcp",
+        mask="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.mask",
+        misc="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.misc",
+        log0=f"03_fmsi_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_{d}.t_index.log",
+    wildcard_constraints:
+        S='|'.join(CAMEL_ALGS),
+    params:
+        fmsi=FMSI,
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.log0}" \\
+            "{params.fmsi} index -k {wildcards.k} {input.fa}" 
+        """
+
+rule run_fmsi_lookup_pos:
+    input:
+        fa="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa",
+        klcp="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.klcp",
+        mask="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.mask",
+        qPos="42_query_fastas/{g}.r_{r}.k_{k}-queries.fa",
+    output:
+        logPos=f"04_fmsi_query_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_{d}.t_Pos.log",
+    wildcard_constraints:
+        S='|'.join(CAMEL_ALGS),
+    params:
+        fmsi=FMSI,
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.logPos}" \\
+            "{params.fmsi} lookup -q {input.qPos} {input.fa} >/dev/null" 
+        """
+
+rule run_fmsi_lookup_neg:
+    input:
+        fa="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa",
+        klcp="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.klcp",
+        mask="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.mask",
+        qNeg="42_query_fastas/negative_queries.k_{k}.fa",
+    output:
+        logNeg=f"04_fmsi_query_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_{d}.t_Neg.log",
+    wildcard_constraints:
+        S='|'.join(CAMEL_ALGS),
+    params:
+        fmsi=FMSI,
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.logNeg}" \\
+            "{params.fmsi} lookup -q {input.qNeg} {input.fa} >/dev/null" 
+        """
+
+rule run_fmsi_lookup_str:
+    input:
+        fa="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa",
+        klcp="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.klcp",
+        mask="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.mask",
+        qStr="42_query_fastas/{g}.k_{k}-queries-str.fa",
+    output:
+        logStr=f"04_fmsi_query_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_{d}.t_Str.log",
+    wildcard_constraints:
+        S='|'.join(CAMEL_ALGS),
+    params:
+        fmsi=FMSI,
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.logStr}" \\
+            "{params.fmsi} lookup -S -q {input.qStr} {input.fa} >/dev/null 2>/dev/null" 
+        """
+
+rule make_fmsi_stats:
+    input:
+        ac="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.ac",
+        gt="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.gt",
+        ac_gt="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.ac_gt",
+        klcp="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.klcp",
+        mask="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.mask",
+        misc="01_MS_index/{g}.r_{r}.S_{S}.k_{k}.d_{d}.fa.fmsi.misc",
+        kmerCnt="80_size_stats/{g}.r_{r}.k_{k}.kmerCount",
+    output:
+        stats=f"80_size_stats/{HOSTNAME}/" + "fmsi.{g}.r_{r}.S_{S}.k_{k}.d_{d}.stats.tsv"
+    params:
+        pref="fmsi.{g}.S_{S}.k_{k}.d_{d}",
+    priority: 50
+    shell:
+        """
+        (
+        #1
+        printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s' genome rate I_alg S_alg k d
+        printf '\\t'
+
+        #2
+        printf '%s\\t%s\\t%s\\t%s' kmer_count index_bytes index_bytes_streaming
+        printf '\\t'
+
+        # final
+        printf '%s' pref
+        printf '\\n'
+
+
+        ##################################
+
+        #1
+        printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s' \\
+            {wildcards.g} \\
+            {wildcards.r} \\
+            "fmsi" \\
+            {wildcards.S} \\
+            {wildcards.k} \\
+            {wildcards.d} 
+        printf '\\t'
+
+        #2
+        printf '%d\\t%d\\t%d' \\
+            $(cat {input.kmerCnt} | xargs echo) \\
+            $(cat {input.ac} {input.gt} {input.ac_gt} {input.misc} {input.mask} | wc -c) \\
+            $(cat {input.ac} {input.gt} {input.ac_gt} {input.misc} {input.klcp} {input.mask} | wc -c)
+        printf '\\t'
+
+        #final
+        printf '%s' \\
+            {params.pref}
+        printf '\\n'
+
+        ) > {output.stats}
+        """
+
+        
+
+
+#####################################################################################################
+# RUN PROPHASM or GGCAT + BWA
+#####################################################################################################
+
+rule run_prophasm:
+    input:
+        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+    output:
+        fa=RSPSS_DIR+"{g}.r_{r}.S_prophasm.k_{k}.d_na.fa",
+        log0=f"06_rspss_comp_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_prophasm.k_{k}.d_na.t_superstring.log",
+    params:
+        prophasm=PROPHASM,
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.log0}" \\
+            "{params.prophasm} -k {wildcards.k} -i {input.fa} -o {output.fa}"
+        """
+
+rule compute_ggcat_eulertigs:
+    input:
+        fa=f"{DATA_DIR}/" + "{g}_subsampled_k{k}_r{r}.fa",
+    output:
+        fa=RSPSS_DIR+"{g}.r_{r}.S_eulertigs.k_{k}.d_na.fa",
+        log0=f"06_rspss_comp_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_eulertigs.k_{k}.d_na.t_superstring.log",
+    params:
+        ggcat=GGCAT,
+        ggcat_mem = 200, #TODO
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.log0}" \\
+            "{params.ggcat} build -k {wildcards.k} --eulertigs --min-multiplicity 1 --memory {params.ggcat_mem} --threads-count 5 -o {output.fa} {input.fa}"
+        """
+
+
+
+
+#####################################################################################################
+# RUN SSHash on ProphAsm output
+#####################################################################################################
+
+def SSHASH_prog_path(wildcards):
+    if int(wildcards.k) <= 31:
+        return SSHASH
+    if int(wildcards.k) <= 63:
+        return SSHASH_LARGE_K
+
+# mimimizer len. is now determined by a bash script from k and kmer_count
+rule run_sshash:
+    input:
+        fa=RSPSS_DIR+"{g}.r_{r}.S_{S}.k_{k}.d_na.fa",
+        kmerCnt="80_size_stats/{g}.r_{r}.k_{k}.kmerCount"
+    output:
+        index="25_sshash_index/{g}.r_{r}.S_{S}.k_{k}.d_na.sshash",
+        log0=f"26_sshash_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_na.t_index.log",
+    params:
+        sshash=lambda wildcards: SSHASH_prog_path(wildcards),
+        tmpinput="25_sshash_index/{g}.r_{r}.S_{S}.k_{k}.d_na.fa",
+    shell:
+        """
+        seqtk seq {input.fa} >{params.tmpinput}
+        ../../scripts/benchmark.py --log "{output.log0}" \\
+            "{params.sshash} build -i {params.tmpinput} -k {wildcards.k} -m $(./getMinimizerLen4SSHash.py {wildcards.k} {input.kmerCnt}) -o {output.index} -s `echo $RANDOM`"
+        rm {params.tmpinput}
+        """
+
+rule run_sshash_query_pos:
+    input:
+        index="25_sshash_index/{g}.r_{r}.S_{S}.k_{k}.d_na.sshash",
+        qPos="42_query_fastas/{g}.r_{r}.k_{k}-queries.fa",
+    output:
+        logPos=f"27_sshash_query_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_na.t_Pos.log",
+    params:
+        sshash=lambda wildcards: SSHASH_prog_path(wildcards),
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.logPos}" \\
+            "{params.sshash} query -i {input.index} -q {input.qPos}"
+        """
+
+rule run_sshash_query_neg:
+    input:
+        index="25_sshash_index/{g}.r_{r}.S_{S}.k_{k}.d_na.sshash",
+        qNeg="42_query_fastas/negative_queries.k_{k}.fa",
+    output:
+        logNeg=f"27_sshash_query_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_na.t_Neg.log",
+    params:
+        sshash=lambda wildcards: SSHASH_prog_path(wildcards),
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.logNeg}" \\
+            "{params.sshash} query -i {input.index} -q {input.qNeg}"
+        """
+
+rule run_sshash_query_str:
+    input:
+        index="25_sshash_index/{g}.r_{r}.S_{S}.k_{k}.d_na.sshash",
+        qStr="42_query_fastas/{g}.k_{k}-queries-str.fa",
+    output:
+        logStr=f"27_sshash_query_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_na.t_Str.log",
+    params:
+        sshash=lambda wildcards: SSHASH_prog_path(wildcards),
+    shell:
+        """
+        ../../scripts/benchmark.py --log "{output.logStr}" \\
+            "{params.sshash} query -i {input.index} -q {input.qStr}"
+        """
+
+rule make_sshash_stats:
+    input:
+        index="25_sshash_index/{g}.r_{r}.S_{S}.k_{k}.d_na.sshash",
+        kmerCnt="80_size_stats/{g}.r_{r}.k_{k}.kmerCount",
+    output:
+        stats=f"80_size_stats/{HOSTNAME}/" + "sshash.{g}.r_{r}.S_{S}.k_{k}.d_{d}.stats.tsv",
+    params:
+        pref="sshash.{g}.S_{S}.k_{k}.d_{d}",
+    priority: 50
+    shell:
+        """
+        (
+        #1
+        printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s' genome rate I_alg S_alg k d
+        printf '\\t'
+
+        #2
+        printf '%s\\t%s\\t%s\\t%s' kmer_count index_bytes index_bytes_streaming
+        printf '\\t'
+
+        # final
+        printf '%s' pref
+        printf '\\n'
+
+        ##################################
+
+        #1
+        printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s' \\
+            {wildcards.g} \\
+            {wildcards.r} \\
+            SSHash \\
+            {wildcards.S} \\
+            {wildcards.k} \\
+            {wildcards.d} 
+        printf '\\t'
+
+        #2
+        printf '%d\\t%d\\t%d' \\
+            $(cat {input.kmerCnt} | xargs echo) \\
+            $(cat {input.index} | wc -c) \\
+            $(cat {input.index} | wc -c)
+        printf '\\t'
+
+        #final
+        printf '%s' \\
+            {params.pref}
+        printf '\\n'
+
+        ) > {output.stats}
+        """
+
+
+
+#####################################################################################################
+# REFORMATTING MEMTIME LOG (for all algs.)
+#####################################################################################################
+
+def GetNumQueries(wildcards):
+    if wildcards.t == "Pos" or wildcards.t == "Neg":
+        return NUM_QUERIED_KMERS
+    elif wildcards.t == "Str":
+        return GetNumSeqs4StreamingQueries(STREAMING_SEQUENCES_LENGTH, NUM_QUERIED_KMERS, wildcards) * (int(STREAMING_SEQUENCES_LENGTH) - int(wildcards.k) + 1)
+    else: # t == index or superstring
+        return 0
+
+def GetNumSeqs4StreamingQueries(seq_len, num_queried_kmers, wildcards):
+    return int(num_queried_kmers) // (int(seq_len) - int(wildcards.k) + 1)
+
+
+
+rule reformat_memtime_logs:
+    output:
+        "{dir}" + f"_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_{d}.t_{t}.tsv",
+    input:
+        "{dir}" + f"_memtime/{HOSTNAME}/" + "{g}.r_{r}.S_{S}.k_{k}.d_{d}.t_{t}.log",
+    params:
+        pref="{g}.r_{r}.S_{S}.k_{k}.d_{d}.t_{t}",
+        num_queries=lambda wildcards: GetNumQueries(wildcards),
+    priority: 50
+    shell:
+        """
+        (
+            printf 'pref\\tgenome\\trate\\tprog\\tS_alg\\tk\\td\\tqType\\tnum_queries\\t'
+
+            cat {input} \\
+                | grep real
+
+            printf '%s\\t%s\\t%s\\t%s\\t%s\\t%d\\t%s\\t%s\\t%s\\t' \\
+                {params.pref} \\
+                {wildcards.g} \\
+                {wildcards.r} \\
+                {wildcards.dir} \\
+                {wildcards.S} \\
+                {wildcards.k} \\
+                {wildcards.d} \\
+                {wildcards.t} \\
+                {params.num_queries} \\
+            ;
+
+            cat {input} \\
+                | grep -Ev '(real|#)'
+
+        ) > {output}
+        """
+
+
+#####################################################################################################
+# GET HW INFO ABOUT THE CURRENT COMPUTER
+#####################################################################################################
+
+
+rule add_hw_info:
+    output:
+        hw=f"00_hw_info/{HOSTNAME}.txt",
+    priority: 50
+    shell:
+        """
+        ../../scripts/print_hw_info.sh > {output.hw}
+        """
