@@ -57,16 +57,21 @@ Our full experimental results for membership queries are available at [experimen
 
 ### Reproducing experimental results on membership queries
 
-We provide a way to run all the experiments with membership queries reported in the paper at once, using [Snakemake](https://snakemake.readthedocs.io/en/stable/). We also require Rscript to aggregate the results into TSV tables (one per dataset).
+We provide a way to run all the experiments with membership queries reported in the paper, using [Snakemake](https://snakemake.readthedocs.io/en/stable/). We also require [seqtk](https://github.com/lh3/seqtk) to process FASTA files and Rscript to aggregate the results into TSV tables (one per dataset).
 After cloning this repository, perform the following preparation steps.
 
 1. Download all (or selected) datasets from [Zenodo record 14722244](https://zenodo.org/records/14722244) into the [data/](data/) directory.
 2. Decompress all xz files in [data/](data/).
 3. Download and compile the required programs CBL, FMSI, GGCAT, KmerCamel, ProphAsm, SBWT, SSHash, and Wgsim: Go to [experiments/01_build_and_query_memtime/](experiments/01_build_and_query_memtime/) and run all `download_compile_{prog}.sh` scripts. Note that SBWT and SSHash need to be compile separately for $k \ge 32$ or $k > 32$. Also 
 CBL requires to be compiled for each value of *k* separately (the range of $k$ for compilation can be limited in [experiments/01_build_and_query_memtime/download_compile_CBL.sh](download_compile_CBL.sh)).
-4. The evaluated values of *k*, subsampling rates *r*, and datasets can all be changed in the [Snakefile](experiments/01_build_and_query_memtime/Snakefile) (lines 10-25). Note that running the experiments on all datasets with all combinations of the parameters may take several days of CPU time, a lot of disk space for indexes and FASTA files with SPSS/MS (about 1 TB), and some computations may require 200 GB or more. The number of cores provided to Snakemake can be changed in the [Makefile](experiments/01_build_and_query_memtime/Makefile) (default = 2). Note also that running SBWT requires substantial disk space for temporary files, especially on the *E. coli* pan-genomes, HG T2T assembly, and HG Illumina reads  (e.g., on the whole *E. coli* pan-genome, it used 84 GB of disk space in our benchmarks); hence, the Snakemake resource parameter `sbwtlimit` (provided as a command-line parameter in Makefile) limit the number of parallel executions of `sbwt build` (default = 1).
+4. The evaluated values of *k*, subsampling rates *r*, and datasets can all be changed in the [Snakefile](experiments/01_build_and_query_memtime/Snakefile) (lines 10-25). 
 
 Then, the experiments are run with `make`. Use `make test` to run it only on *S. pneumoniae* pan-genome with $k=31$.
+
+Notes:
+- The number of CPU cores provided to Snakemake can be changed in the [Makefile](experiments/01_build_and_query_memtime/Makefile) (default = 2).
+- Running the experiments on all datasets with all combinations of the parameters may take several days of CPU time, about 1 TB of disk space for indexes and FASTA files with SPSS/MS, and some computations may require 200 GB or more.  
+- Running SBWT requires substantial disk space for temporary files, especially on the *E. coli* pan-genomes, HG T2T assembly, and HG Illumina reads  (e.g., on the whole *E. coli* pan-genome, it used 84 GB of disk space in our benchmarks); hence, the Snakemake resource parameter `sbwtlimit` (provided as a command-line parameter in Makefile) limit the number of parallel executions of `sbwt build` (default = 1).
 
 ### Experiments with dictionary queries
 
