@@ -11,23 +11,6 @@ ps <- 2.0 # point size
 fs <- 10 # font size
 
 
-# == == == == == == == == == == == == == == == == ==
-# Options (for copy-paste below) ----
-# == == == == == == == == == == == == == == == == ==
-
-variables <- "ktext ~ plot"
-variables <- "genome ~ plot"
-
-datasets <- c("Spneumo-pang")
-datasets <- c("SC2-pang")
-datasets <- c("Ecoli-pang", "Spneumo-pang", "SC2-pang")
-datasets <- c("Ecoli-pang")
-
-ks <- c(15)
-ks <- c(23)
-ks <- c(31)
-ks <- c(15, 23, 31)
-
 
 # == == == == == == == == == == == == == == == == ==
 # Current plot combo configuration ----
@@ -38,21 +21,30 @@ ks <- c(15, 23, 31)
 #variables <- "genome ~ plot"; datasets <- c("Ecoli-pang"); ks <- c(23); h <- 6; w <- 15
 
 # Fig 2, species x modes for k=23
-variables <- "genome ~ plot"; datasets <- c("Ecoli-pang", "Spneumo-pang", "SC2-pang"); ks <- c(23); h <- 12; w <- 12
+#variables <- "genome ~ plot"; datasets <- c("ec-pg-all","ec-pg-hq","sc2-pg","ng-pg","sp-pg","mtg-ilm","rna-ilm","hg-t2t","hg-ilm","minikr4gib","minikr8gib"); ks <- c(23); h <- 12; w <- 12
+#variables <- "genome ~ plot"; datasets <- c("ec-pg-all","mtg-ilm","hg-t2t"); ks <- c(23); h <- 12; w <- 12
+variables <- "plot ~ genome"; datasets <- c("ec-pg-hq","mtg-ilm","hg-t2t"); ks <- c(23); h <- 12; w <- 12
 
 # Sup. Fig 1; Spneumo: modes x k
-variables <- "ktext ~ plot"; datasets <- c("Spneumo-pang"); ks <- c(15, 23, 31); h <- 12; w <- 12
-variables <- "ktext ~ plot"; datasets <- c("Ecoli-pang"); ks <- c(15, 23, 31); h <- 12; w <- 12
-variables <- "ktext ~ plot"; datasets <- c("SC2-pang"); ks <- c(15, 23, 31); h <- 12; w <- 12
+#variables <- "ktext ~ plot"; datasets <- c("Spneumo-pang"); ks <- seq(from = 11, to = 67, by = 4); h <- 12; w <- 12
+# variables <- "ktext ~ plot"; datasets <- c("Ngono-pang"); ks <- c(15, 23, 31); h <- 12; w <- 12
+# variables <- "ktext ~ plot"; datasets <- c("Ecoli-pang-all"); ks <- c(15, 23, 31); h <- 12; w <- 12
+# variables <- "ktext ~ plot"; datasets <- c("Ecoli-pang-HQ"); ks <- c(15, 23, 31); h <- 12; w <- 12
+# variables <- "ktext ~ plot"; datasets <- c("SC2-pang"); ks <- c(15, 23, 31); h <- 12; w <- 12
+# variables <- "ktext ~ plot"; datasets <- c("HG-T2T"); ks <- c(15, 23, 31); h <- 12; w <- 12
+# variables <- "ktext ~ plot"; datasets <- c("minikraken4GB"); ks <- c(15, 23, 31); h <- 12; w <- 12
+
+
+# new mode with many ks
+#variables <- "ktext ~ plot"; datasets <- c("Spneumo-pang"); ks <- seq(from = 11, to = 67, by = 4); h <- 48; w <- 12
+#variables <- "ktext ~ plot"; datasets <- c("HG-T2T"); ks <- seq(from = 11, to = 43, by = 4); h <- 36; w <- 12
 
 
 
-
-
-
-
-
-
+#datasets <- c("Ecoli-pang-all", "Ecoli-pang-HQ", "Ngono-pang", "Spneumo-pang", "SC2-pang", "HG-T2T", "HG-illumina", "RNAseq", "microbiome", "minikraken4GB");
+## for loop over datasets
+#for (g in datasets)
+#{
 
 # ==
 # Plotting -----
@@ -71,13 +63,16 @@ basename <- paste("plot",
                   paste(ks, collapse = "-"),
                   sep = "__")
 
-fn <- paste0(basename, ".pdf")
+#fn <- paste0(basename, ".pdf")
+fn <- "fig_memtime.pdf"
 
 number_formatter <- function(y) {
     ifelse(y %% 1 == 0, as.character(as.integer(y)), as.character(y))
 }
 
-my_shapes <- c(9, 12, 19, 15, 2, 25, 10)
+my_shapes <- c(15,  25, 2, 3, 10, 9, 19,  2)
+my_colors <- c(1,  4, 4, 2, 3)
+custom_palette <- pal_nejm("default")(max(my_colors))[my_colors]
 
 
 
@@ -87,23 +82,35 @@ my_shapes <- c(9, 12, 19, 15, 2, 25, 10)
 
 df0 <- read_tsv("final_results.tsv", na = "na")
 
-df <- df0 %>%
-    mutate(genome = fct_rev(genome)) %>%
-    #filter(k == 23) %>%
+df1 <- df0 %>%
     filter(genome %in% datasets) %>%
+    mutate(genome = factor(genome, levels = datasets)) %>%
     filter(k %in% ks) %>%
-    #filter(bits_per_kmer < 512) %>%
-    filter(!(plot == "subsampl" & I_alg == "bwa")) %>%
+    filter(I_alg != "bwa") %>%
+    filter(algorithm != "FMSI(spss)") %>%
     #mutate(plot2 = factor(plot, levels = c("stream", "isol", "subsampl"))) %>%
-    mutate (
-        plot = case_when(
-            plot == "stream" ~ "a) streamed k-mer qs",
-            plot == "isol" ~ "b) isolated k-mer qs",
-            plot == "subsampl" ~ "c) subsampl. ref (10%)"
+    mutate(
+        plot = recode_factor(
+            plot,
+            "isol"             = "isol",
+            "stream"           = "stream",
+            "subsampl-isol"    = "subsampl-isol",
+            "subsampl-stream"  = "subsampl-stream"
         )
     ) %>%
-    mutate(ktext=paste0("k=",k))
+    mutate(
+        algorithm = recode_factor(
+            algorithm,
+            "FMSI(superstr)"   = "FMSI",
+            "SBWT-small"       = "SBWT-small",
+            "SBWT-fast"        = "SBWT-fast",
+            "SSHash(spss)"     = "SSHash",
+            "CBL"              = "CBL"
+        )
+    ) %>%
+    mutate(ktext = paste0("k=", k))
 
+df <- df1
 
 
 ## == == == == == == == == == == == == == ==
@@ -111,11 +118,9 @@ df <- df0 %>%
 ## == == == == == == == == == == == == == ==
 
 theme_set(
-    theme_bw(base_size=fs) +
+    theme_bw(base_size = fs) +
         theme(
-            axis.text.x = element_text(
-                angle = 45
-            ),
+            axis.text.x = element_text(angle = 45),
             #panel.grid.major = element_line(color = "grey70", size = 0.25),
             #panel.grid.minor = element_line(color = "grey90", size = 0.25),
             legend.key.size = unit(0.2, "cm"),
@@ -144,19 +149,6 @@ theme_set(
 ## == == == == == == == == == == == == == ==
 ## Step 4: Plot --------------------------------------------------------------------
 ## == == == == == == == == == == == == == ==
-
-# Get unique combinations of 'algorithm' and 'I_alg'
-alg_prog_df <- df %>% select(algorithm, I_alg) %>% unique()
-
-# Get unique programs
-prog_levels <- unique(df$I_alg)
-
-# Assign colors to programs using the 'nejm' palette
-nejm_colors <- pal_nejm("default")(length(prog_levels))
-prog_colors <- setNames(nejm_colors, prog_levels)
-
-# Map 'algorithm' to colors via 'I_alg'
-alg_colors <- setNames(prog_colors[match(alg_prog_df$I_alg, names(prog_colors))], alg_prog_df$algorithm)
 
 
 minor_breaks <- 2 ^ seq(-10, 10, by = 2)  # Every second exponent
@@ -190,7 +182,7 @@ ggplot(
         labels = number_formatter
     ) +
     scale_shape_manual(values = my_shapes) +
-    scale_color_manual(values = alg_colors) +
+    scale_color_manual(values = custom_palette) +
     guides(
         color = guide_legend("Group"),
         shape = guide_legend("Group"),
@@ -207,3 +199,5 @@ ggsave(fn,
        height = h,
        width = w,
        unit = u)
+
+#}
