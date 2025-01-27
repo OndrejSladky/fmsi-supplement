@@ -79,7 +79,7 @@ We also provide a similar experimental evaluation for dictionary queries, namely
 
 The setup to run the experiments is very similar to the setup for membership queries; in fact, we reuse some indexes from the previous experiments. The FMSI index need to be computed again, on the masked superstring with the minimum number of ones. SSHash index construction and queries are the same as for membership queries.
 
-The experiments for lookup queries are run with `make` [experiments/03_lookup_queries/](experiments/03_lookup_queries/). Use `make test` to run it only on *S. pneumoniae* pan-genome with $k=31$.
+The experiments for lookup queries are run with `make` in [experiments/03_lookup_queries/](experiments/03_lookup_queries/). Use `make test` to run it only on *S. pneumoniae* pan-genome with $k=31$.
 
 ## Figures
 
