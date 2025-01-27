@@ -7,10 +7,11 @@ shell.prefix("set -euo pipefail")
 ########################  FOR TESTING LOOKUP QUERIES: only FMSI (with min-1's mask) and SSHash ############
 
 ########## SETUP ###############
-DATASETS_AND_K_VALS = [#("spneumo_pangenome_RASE_db.unitigs_k128", list(range(15, 47, 2))),
-                       ("sars-cov-2_pangenome_gisaid.unitigs_k128", [15, 23]), # list(range(15, 47, 2))),
-                    #    ("minikraken4GB_k31", [31]),
-                    #    ("minikraken8GB_k31", [31]),
+DATASETS_AND_K_VALS = [
+                       ("minikraken4GB_k31", [31]),
+                       ("minikraken8GB_k31", [31]),
+                    #    ("spneumo_pangenome_RASE_db.unitigs_k128", list(range(15, 47, 2))),
+                    #    ("sars-cov-2_pangenome_gisaid.unitigs_k128", [15, 23]), # list(range(15, 47, 2))),
                     #    ("ecoli_pangenome_661k_HQ.unitigs_k128", list(range(15, 47, 2))),
                     #    ("ecoli_pangenome_661k_all.unitigs_k128", [15, 23, 31]),
                     #    ("human_rnaseq_srx348811.unitigs_minfreq2_k32", [15, 23, 31]), # only up to 32
@@ -46,7 +47,7 @@ DATA_DIR = "../../data"
 # PATH TO PROGRAMS
 CAMEL = "./kmercamel"
 FMSI = "./fmsi"
-PROPHASM = "../../prophasm/prophasm" # create download&compile script if used again
+PROPHASM = "./prophasm" # create download&compile script if used again
 GGCAT = "./ggcat"
 SSHASH = "./sshash"
 SSHASH_LARGE_K = "./sshash_large_k"
