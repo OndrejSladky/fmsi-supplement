@@ -43,7 +43,7 @@ Ondřej Sladký, Pavel Veselý, Karel Břinda:
 * Human genome assembly chm13v2.0 (T2T), downloaded from https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/analysis_set/chm13v2.0.fa.gz.
 * Two MiniKraken datasets (4GB and 8GB), downloaded from https://ccb.jhu.edu/software/kraken/, with the 31-mers dumped using Jellyfish 1.1.12.
 
-We subsampled some of the datasets (pan-genomes, metagenomic sample, and HG T2T assembly) by choosing 10% randomly chosen distinct canonical $k$-mers. 
+We subsampled some of the datasets (pan-genomes, metagenomic sample, and HG T2T assembly) by randomly choosing 10% distinct canonical $k$-mers. 
 
 All of the datasets are provided at [Zenodo record 14722244](https://zenodo.org/records/14722244).
 
