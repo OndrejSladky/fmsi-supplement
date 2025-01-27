@@ -57,7 +57,7 @@ Our full experimental results for membership queries are available at [experimen
 
 ### Reproducing experimental results on membership queries
 
-We provide a way to run all the experiments with membership queries reported in the paper, using [Snakemake](https://snakemake.readthedocs.io/en/stable/). We also require [seqtk](https://github.com/lh3/seqtk) to process FASTA files and Rscript to aggregate the results into TSV tables (one per dataset).
+We provide a way to run all the experiments with membership queries reported in the paper, using [Snakemake](https://snakemake.readthedocs.io/en/stable/). We evaluate CBL, FMSI, SBWT, and SSHash. We also require [seqtk](https://github.com/lh3/seqtk) to process FASTA files and Rscript to aggregate the results into TSV tables (one per dataset).
 After cloning this repository, perform the following preparation steps.
 
 1. Download all (or selected) datasets from [Zenodo record 14722244](https://zenodo.org/records/14722244) into the [data/](data/) directory.
@@ -66,7 +66,7 @@ After cloning this repository, perform the following preparation steps.
 CBL requires to be compiled for each value of *k* separately (the range of $k$ for compilation can be limited in [experiments/01_build_and_query_memtime/download_compile_CBL.sh](download_compile_CBL.sh)).
 4. The evaluated values of *k*, subsampling rates *r*, and datasets can all be changed in the [Snakefile](experiments/01_build_and_query_memtime/Snakefile) (lines 10-25). 
 
-Then, the experiments are run with `make`. Use `make test` to run it only on *S. pneumoniae* pan-genome with $k=31$.
+Then, the experiments are run with `make` in [experiments/01_build_and_query_memtime/](experiments/01_build_and_query_memtime/). Use `make test` to run it only on *S. pneumoniae* pan-genome with $k=31$.
 
 Notes:
 - The number of CPU cores provided to Snakemake can be changed in the [Makefile](experiments/01_build_and_query_memtime/Makefile) (default = 2).
@@ -75,6 +75,11 @@ Notes:
 
 ### Experiments with dictionary queries
 
+We also provide a similar experimental evaluation for dictionary queries, namely the lookup queries as called in the [SSHash paper](https://doi.org/10.1093/bioinformatics/btac245), which evaluate a minimal perfect hash function (MPHF) for the indexed k*-mers. We only compared FMSI and SSHash as other tools do not provide dictionary functionality. Our results for the MiniKraken datasets are provided in [experiments/03_lookup_queries/99_results](experiments/03_lookup_queries/99_results).
+
+The setup to run the experiments is very similar to the setup for membership queries; in fact, we reuse some indexes from the previous experiments. The FMSI index need to be computed again, on the masked superstring with the minimum number of ones. SSHash index construction and queries are the same as for membership queries.
+
+The experiments for lookup queries are run with `make` [experiments/03_lookup_queries/](experiments/03_lookup_queries/). Use `make test` to run it only on *S. pneumoniae* pan-genome with $k=31$.
 
 ## Figures
 
